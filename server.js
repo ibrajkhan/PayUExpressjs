@@ -8,6 +8,11 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(
+  cors({
+    origin: "https://miceandmore.co.in/",
+  })
+);
 
 const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
 const SALT = process.env.PAYU_SALT;
@@ -87,11 +92,11 @@ app.post("/payu/success", (req, res) => {
     .digest("hex");
 
   if (expectedHash !== receivedHash) {
-    return res.redirect("http://localhost:3000/payment-fail");
+    return res.redirect("https://miceandmore.co.in/payment-fail");
   }
 
   res.redirect(
-    `http://localhost:3000/payment-success?txnid=${txnid}&amount=${amountFixed}&name=${firstname}&email=${email}&phone=${udf1}&organisation=${udf2}&designation=${udf3}`
+    `https://miceandmore.co.in/payment-success?txnid=${txnid}&amount=${amountFixed}&name=${firstname}&email=${email}&phone=${udf1}&organisation=${udf2}&designation=${udf3}`
   );
 });
 
