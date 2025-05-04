@@ -5,12 +5,13 @@ const crypto = require("crypto");
 const cors = require("cors");
 
 const app = express();
-app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(
   cors({
-    origin: "https://miceandmore.co.in/RegistrationForm",
+    origin: "https://www.miceandmore.co.in",
+    methods: ["POST"],
+    credentials: true,
   })
 );
 
@@ -98,6 +99,10 @@ app.post("/payu/success", (req, res) => {
   res.redirect(
     `https://miceandmore.co.in/payment-success?txnid=${txnid}&amount=${amountFixed}&name=${firstname}&email=${email}&phone=${udf1}&organisation=${udf2}&designation=${udf3}`
   );
+});
+
+app.post("/payu/fail", (req, res) => {
+  res.redirect("https://miceandmore.co.in/payment-fail");
 });
 
 app.listen(5000, () => {
