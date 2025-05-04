@@ -7,9 +7,17 @@ const cors = require("cors");
 const app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+// app.use(
+//   cors({
+//     origin: "https://www.miceandmore.co.in",
+//     methods: ["POST"],
+//     credentials: true,
+//   })
+// );
+
 app.use(
   cors({
-    origin: "https://www.miceandmore.co.in",
+    origin: ["https://www.miceandmore.co.in", "https://miceandmore.co.in"],
     methods: ["POST"],
     credentials: true,
   })
