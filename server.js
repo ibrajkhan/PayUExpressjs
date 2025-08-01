@@ -334,7 +334,7 @@ const SHEETDB_URL = "https://sheetdb.io/api/v1/6n0icf7jmq5rr";
 // 1. Generate PayU Hash
 app.post("/generate-hash", (req, res) => {
   try {
-    let {
+    const {
       txnid,
       amount,
       productinfo,
@@ -348,46 +348,32 @@ app.post("/generate-hash", (req, res) => {
     } = req.body;
 
     const amountFixed = parseFloat(amount).toFixed(2);
-
-    // Trim all input to avoid stray spaces
-    const txnidStr = (txnid || "").trim();
-    const productinfoStr = (productinfo || "").trim();
-    const firstnameStr = (firstname || "").trim();
-    const emailStr = (email || "").trim();
-    const udf1Str = (udf1 || "").trim();
-    const udf2Str = (udf2 || "").trim();
-    const udf3Str = (udf3 || "").trim();
-    const udf4Str = (udf4 || "").trim();
-    const udf5Str = (udf5 || "").trim();
-
-    // Construct hash string exactly per PayU spec
     const hashString = [
-      MERCHANT_KEY,
-      txnidStr,
+      (MERCHANT_KEY || "").trim(),
+      (txnid || "").trim(),
       amountFixed,
-      productinfoStr,
-      firstnameStr,
-      emailStr,
-      udf1Str,
-      udf2Str,
-      udf3Str,
-      udf4Str,
-      udf5Str,
+      (productinfo || "").trim(),
+      (firstname || "").trim(),
+      (email || "").trim(),
+      (udf1 || "").trim(),
+      (udf2 || "").trim(),
+      (udf3 || "").trim(),
+      (udf4 || "").trim(),
+      (udf5 || "").trim(),
       "",
       "",
       "",
       "",
-      "", // udf6 - udf10 blank
-      SALT,
+      "", // udf6 to udf10
+      (SALT || "").trim(),
     ].join("|");
 
-    console.log("Hash String for PayU:", hashString); // Debugging, remove in prod
+    // TEMPORARY DEBUG: Log the hash string you are sending!
+    console.log("PayU HASH STRING:", hashString);
 
     const hash = crypto.createHash("sha512").update(hashString).digest("hex");
-
     res.json({ hash });
-  } catch (error) {
-    console.error("Error generating hash:", error);
+  } catch (e) {
     res.status(500).json({ error: "Hash generation failed" });
   }
 });
