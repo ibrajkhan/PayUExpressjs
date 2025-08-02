@@ -518,13 +518,233 @@
 // app.listen(PORT, () => {
 //   console.log(`🚀 PayU Hash Server running at http://localhost:${PORT}`);
 // });
+
+// Organizatin and designation
+// require("dotenv").config();
+// const express = require("express");
+// const bodyParser = require("body-parser");
+// const crypto = require("crypto");
+// const cors = require("cors");
+
+// // Node fetch import for backend HTTP requests
+// const fetch = (...args) =>
+//   import("node-fetch").then(({ default: fetch }) => fetch(...args));
+
+// const app = express();
+
+// app.use(bodyParser.json());
+// app.use(bodyParser.urlencoded({ extended: true }));
+
+// // CORS middleware - adjust origins for development/production as needed
+// app.use(
+//   cors({
+//     origin: [
+//       "http://localhost:3000", // dev frontend origin
+//       "https://www.miceandmore.co.in", // production frontend
+//       "https://miceandmore.co.in", // alternate production domain
+//     ],
+//     methods: ["POST"],
+//     credentials: true,
+//   })
+// );
+
+// const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
+// const SALT = process.env.PAYU_SALT;
+// const SHEETDB_URL =
+//   process.env.SHEETDB_URL || "https://sheetdb.io/api/v1/6n0icf7jmq5rr";
+
+// // 1. Generate PayU Hash
+// app.post("/generate-hash", (req, res) => {
+//   try {
+//     const {
+//       txnid,
+//       amount,
+//       productinfo,
+//       firstname,
+//       email,
+//       udf1 = "",
+//       udf2 = "",
+//       udf3 = "",
+//       udf4 = "",
+//       udf5 = "",
+//     } = req.body;
+
+//     // Always format amount to have 2 decimals
+//     const amountFixed = parseFloat(amount).toFixed(2);
+
+//     // PayU requires 10 udf fields total: udf1-udf10; blank ones included
+//     // Separate fields by | in this exact order:
+//     // key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|salt
+//     const hashString = [
+//       (MERCHANT_KEY || "").trim(),
+//       (txnid || "").trim(),
+//       amountFixed,
+//       (productinfo || "").trim(),
+//       (firstname || "").trim(),
+//       (email || "").trim(),
+//       (udf1 || "").trim(),
+//       (udf2 || "").trim(),
+//       (udf3 || "").trim(),
+//       (udf4 || "").trim(),
+//       (udf5 || "").trim(),
+//       "",
+//       "",
+//       "",
+//       "",
+//       "", // udf6 through udf10 are empty
+//       (SALT || "").trim(),
+//     ].join("|");
+
+//     // Debug: log for verification (remove after confirming correct)
+//     console.log("PayU HASH STRING:", hashString);
+
+//     const hash = crypto.createHash("sha512").update(hashString).digest("hex");
+//     res.json({ hash });
+//   } catch (error) {
+//     console.error("Error generating hash:", error);
+//     res.status(500).json({ error: "Hash generation failed" });
+//   }
+// });
+
+// // 2. PayU Success Handler - validate hash and redirect on success
+// app.post("/payu/success", (req, res) => {
+//   const {
+//     key,
+//     txnid,
+//     amount,
+//     productinfo,
+//     firstname,
+//     email,
+//     status,
+//     hash: receivedHash,
+//     additionalCharges,
+//     udf1 = "",
+//     udf2 = "",
+//     udf3 = "",
+//     udf4 = "",
+//     udf5 = "",
+//   } = req.body;
+
+//   const amountFixed = parseFloat(amount).toFixed(2);
+
+//   // Construct hash string reverse order with udf6-udf10 empties per PayU doc
+//   const reverseHashFields = [
+//     (SALT || "").trim(),
+//     (status || "").trim(),
+//     "",
+//     "",
+//     "",
+//     "",
+//     "", // udf10 through udf6 blanks
+//     (udf5 || "").trim(),
+//     (udf4 || "").trim(),
+//     (udf3 || "").trim(),
+//     (udf2 || "").trim(),
+//     (udf1 || "").trim(),
+//     (email || "").trim(),
+//     (firstname || "").trim(),
+//     (productinfo || "").trim(),
+//     amountFixed,
+//     (txnid || "").trim(),
+//     (key || "").trim(),
+//   ];
+
+//   let hashString = reverseHashFields.join("|");
+//   if (additionalCharges) {
+//     hashString = `${additionalCharges}|${hashString}`;
+//   }
+
+//   const expectedHash = crypto
+//     .createHash("sha512")
+//     .update(hashString)
+//     .digest("hex");
+
+//   if (expectedHash !== receivedHash) {
+//     console.error("Hash mismatch", { expectedHash, receivedHash });
+//     return res.redirect("https://miceandmore.co.in/payment-fail");
+//   }
+
+//   // Encode delegates JSON string in udf4 for redirect querystring param
+//   const delegatesParam = encodeURIComponent(udf4 || "[]");
+
+//   res.redirect(
+//     `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
+//       txnid
+//     )}&amount=${encodeURIComponent(
+//       amountFixed
+//     )}&delegates=${delegatesParam}&organisation=${encodeURIComponent(
+//       udf2
+//     )}&designation=${encodeURIComponent(udf3)}&pax=${encodeURIComponent(udf5)}`
+//   );
+// });
+
+// // 3. PayU Fail Handler
+// app.post("/payu/fail", (req, res) => {
+//   res.redirect("https://miceandmore.co.in/payment-fail");
+// });
+
+// // 4. Register endpoint to save delegate data to SheetDB
+// app.post("/register", async (req, res) => {
+//   try {
+//     const {
+//       txnid,
+//       amount,
+//       organisation,
+//       designation,
+//       delegates, // Array<{name, email, phone}>
+//       payment_status = "Success",
+//       payment_mode = "PayU",
+//       payment_date = new Date().toISOString(),
+//     } = req.body;
+
+//     if (!Array.isArray(delegates) || delegates.length === 0) {
+//       return res
+//         .status(400)
+//         .json({ success: false, error: "Delegates data missing or invalid" });
+//     }
+
+//     const rows = delegates.map((d) => ({
+//       txnid,
+//       amount,
+//       organisation,
+//       designation,
+//       delegate_name: d.name,
+//       delegate_email: d.email,
+//       delegate_phone: d.phone,
+//       payment_status,
+//       payment_mode,
+//       payment_date,
+//     }));
+
+//     const sheetRes = await fetch(SHEETDB_URL, {
+//       method: "POST",
+//       headers: { "Content-Type": "application/json" },
+//       body: JSON.stringify({ data: rows }),
+//     });
+
+//     const sheetDbResult = await sheetRes.json();
+
+//     res.json({ success: true, sheetDbResponse: sheetDbResult });
+//   } catch (error) {
+//     console.error("Error saving to SheetDB:", error);
+//     res
+//       .status(500)
+//       .json({ success: false, error: error.message || error.toString() });
+//   }
+// });
+
+// const PORT = process.env.PORT || 5000;
+// app.listen(PORT, () => {
+//   console.log(`🚀 PayU Hash Server running at http://localhost:${PORT}`);
+// });
+
 require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
 const crypto = require("crypto");
 const cors = require("cors");
 
-// Node fetch import for backend HTTP requests
+// For backend HTTP requests (SheetDB)
 const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
 
@@ -533,7 +753,6 @@ const app = express();
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// CORS middleware - adjust origins for development/production as needed
 app.use(
   cors({
     origin: [
@@ -561,18 +780,15 @@ app.post("/generate-hash", (req, res) => {
       firstname,
       email,
       udf1 = "",
-      udf2 = "",
-      udf3 = "",
-      udf4 = "",
+      udf2 = "", // now expecting organisation of delegate 1
+      udf3 = "", // now expecting designation of delegate 1
+      udf4 = "", // JSON-stringified delegates array
       udf5 = "",
     } = req.body;
 
-    // Always format amount to have 2 decimals
     const amountFixed = parseFloat(amount).toFixed(2);
 
-    // PayU requires 10 udf fields total: udf1-udf10; blank ones included
-    // Separate fields by | in this exact order:
-    // key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|salt
+    // PayU requires 10 udf fields (udf1 through udf10), so 9 pipes after udf5
     const hashString = [
       (MERCHANT_KEY || "").trim(),
       (txnid || "").trim(),
@@ -589,12 +805,15 @@ app.post("/generate-hash", (req, res) => {
       "",
       "",
       "",
+      "",
+      "",
+      "",
       "", // udf6 through udf10 are empty
       (SALT || "").trim(),
     ].join("|");
 
-    // Debug: log for verification (remove after confirming correct)
-    console.log("PayU HASH STRING:", hashString);
+    // For debugging; remove/comment out in production
+    // console.log("PayU HASH STRING:", hashString);
 
     const hash = crypto.createHash("sha512").update(hashString).digest("hex");
     res.json({ hash });
@@ -617,15 +836,15 @@ app.post("/payu/success", (req, res) => {
     hash: receivedHash,
     additionalCharges,
     udf1 = "",
-    udf2 = "",
-    udf3 = "",
-    udf4 = "",
+    udf2 = "", // organisation (delegate 1)
+    udf3 = "", // designation (delegate 1)
+    udf4 = "", // JSON-stringified delegates array
     udf5 = "",
   } = req.body;
 
   const amountFixed = parseFloat(amount).toFixed(2);
 
-  // Construct hash string reverse order with udf6-udf10 empties per PayU doc
+  // For hash response validation: see PayU docs
   const reverseHashFields = [
     (SALT || "").trim(),
     (status || "").trim(),
@@ -633,7 +852,10 @@ app.post("/payu/success", (req, res) => {
     "",
     "",
     "",
-    "", // udf10 through udf6 blanks
+    "",
+    "",
+    "",
+    "", // udf10 through udf6 empty
     (udf5 || "").trim(),
     (udf4 || "").trim(),
     (udf3 || "").trim(),
@@ -662,7 +884,7 @@ app.post("/payu/success", (req, res) => {
     return res.redirect("https://miceandmore.co.in/payment-fail");
   }
 
-  // Encode delegates JSON string in udf4 for redirect querystring param
+  // For the frontend, keep organisation, designation (of delegate 1), and all delegates
   const delegatesParam = encodeURIComponent(udf4 || "[]");
 
   res.redirect(
@@ -687,9 +909,7 @@ app.post("/register", async (req, res) => {
     const {
       txnid,
       amount,
-      organisation,
-      designation,
-      delegates, // Array<{name, email, phone}>
+      delegates, // Array<{name, email, phone, organisation, designation}>
       payment_status = "Success",
       payment_mode = "PayU",
       payment_date = new Date().toISOString(),
@@ -701,11 +921,12 @@ app.post("/register", async (req, res) => {
         .json({ success: false, error: "Delegates data missing or invalid" });
     }
 
+    // Save each delegate's data (including their org and designation)
     const rows = delegates.map((d) => ({
       txnid,
       amount,
-      organisation,
-      designation,
+      organisation: d.organisation,
+      designation: d.designation,
       delegate_name: d.name,
       delegate_email: d.email,
       delegate_phone: d.phone,
