@@ -989,7 +989,7 @@ app.use(
   })
 );
 
-// Load config from environment or use test constants for local testing
+// === ENV/Config ===
 const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY || "your_merchant_key";
 const SALT = process.env.PAYU_SALT || "your_salt";
 const SHEETDB_URL =
@@ -1002,11 +1002,7 @@ const EMAILJS_PUBLIC_KEY =
 
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
-/**
- * Generates PayU payment request hash.
- * @param {object} params
- * @returns {string} SHA512 hash string
- */
+// --- PayU request hash helper ---
 function generatePayuRequestHash(params) {
   const udfFields = [
     params.udf1 || "",
@@ -1033,11 +1029,7 @@ function generatePayuRequestHash(params) {
   return crypto.createHash("sha512").update(finalString).digest("hex");
 }
 
-/**
- * Generates PayU response hash for verification.
- * @param {object} params
- * @returns {string} SHA512 hash string
- */
+// --- PayU response hash helper ---
 function generatePayuResponseHash(params) {
   // udf fields reversed order: udf10 to udf1
   const udfFields = [
@@ -1067,12 +1059,11 @@ function generatePayuResponseHash(params) {
   const hashSequence = params.additionalCharges
     ? [params.additionalCharges.trim(), ...baseParts]
     : baseParts;
-
   const hashString = hashSequence.join("|");
   return crypto.createHash("sha512").update(hashString).digest("hex");
 }
 
-// Endpoint for generating payment hash
+// --- Endpoint: Generate hash for PayU payment request ---
 app.post("/generate-hash", (req, res) => {
   try {
     const {
@@ -1087,13 +1078,11 @@ app.post("/generate-hash", (req, res) => {
       udf4 = "",
       udf5 = "",
     } = req.body;
-
     if (!txnid || !amount || !firstname || !email || !productinfo) {
       return res
         .status(400)
         .json({ error: "Missing required fields for hash" });
     }
-
     const hash = generatePayuRequestHash({
       key: MERCHANT_KEY,
       txnid,
@@ -1113,7 +1102,6 @@ app.post("/generate-hash", (req, res) => {
       udf10: "",
       salt: SALT,
     });
-
     res.json({ hash });
   } catch (error) {
     console.error("Error generating hash:", error);
@@ -1121,17 +1109,75 @@ app.post("/generate-hash", (req, res) => {
   }
 });
 
-// Endpoint to handle PayU payment success callback
+// --- Endpoint: PayU success callback ---
 app.post("/payu/success", async (req, res) => {
   try {
-    // ... (parse PayU fields as before)
+    const {
+      key,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      status,
+      hash: receivedHash,
+      additionalCharges,
+      udf1 = "",
+      udf2 = "",
+      udf3 = "",
+      udf4 = "",
+      udf5 = "",
+      udf6 = "",
+      udf7 = "",
+      udf8 = "",
+      udf9 = "",
+      udf10 = "",
+    } = req.body;
+    if (status !== "success") {
+      return res.redirect("https://miceandmore.co.in/payment-fail");
+    }
+    // --- Build and check PayU verification hash ---
+    const expectedHash = generatePayuResponseHash({
+      key,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      status,
+      additionalCharges,
+      udf1,
+      udf2,
+      udf3,
+      udf4,
+      udf5,
+      udf6,
+      udf7,
+      udf8,
+      udf9,
+      udf10,
+      salt: SALT,
+    });
+    if (expectedHash !== receivedHash) {
+      console.error(
+        `Hash mismatch! Expected: ${expectedHash}, Received: ${receivedHash}`
+      );
+      return res.redirect("https://miceandmore.co.in/payment-fail");
+    }
 
-    // 1. Check if already processed!
+    // --- DEDUPLICATION: Check if txnid already processed in SheetDB ---
     const checkUrl = `${SHEETDB_URL}/search?txnid=${encodeURIComponent(txnid)}`;
-    const checkRes = await fetch(checkUrl);
-    const existing = await checkRes.json();
-    if (existing && existing.length > 0) {
-      // Already processed, redirect to success page WITHOUT re-processing
+    let alreadyProcessed = false;
+    try {
+      const checkRes = await fetch(checkUrl);
+      const existing = await checkRes.json();
+      alreadyProcessed = Array.isArray(existing) && existing.length > 0;
+    } catch (e) {
+      // Silent fail to avoid SheetDB outage blocking payment display
+      console.error("SheetDB check failed:", e);
+    }
+    if (alreadyProcessed) {
+      // Show as success but do NOT re-save or re-email!
       return res.redirect(
         `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
           txnid
@@ -1141,9 +1187,73 @@ app.post("/payu/success", async (req, res) => {
       );
     }
 
-    // 2. Save & email logic here -- only happens ONCE per txnid!
-    // ... save to SheetDB / send email (your existing code) ...
-    // 3. Redirect after all done
+    // --- Save to SheetDB and send email ONLY if not already processed ---
+    // Parse delegates array from udf4 (JSON string)
+    let delegates = [];
+    try {
+      delegates = JSON.parse(udf4);
+      if (!Array.isArray(delegates)) delegates = [];
+    } catch (e) {
+      console.error("Failed to parse delegates JSON:", e);
+      delegates = [];
+    }
+
+    // Save to SheetDB if delegates present
+    if (delegates.length > 0) {
+      const rows = delegates.map((d) => ({
+        txnid,
+        amount: parseFloat(amount).toFixed(2),
+        organisation: udf2,
+        designation: udf3,
+        delegate_name: d.name,
+        delegate_email: d.email,
+        delegate_phone: d.phone,
+        payment_status: "Success",
+        payment_mode: "PayU",
+        payment_date: new Date().toISOString(),
+      }));
+      try {
+        const sheetdbRes = await fetch(SHEETDB_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: rows }),
+        });
+        if (!sheetdbRes.ok) {
+          console.error(
+            "Failed to save data to SheetDB:",
+            await sheetdbRes.text()
+          );
+        }
+      } catch (err) {
+        console.error("Error calling SheetDB:", err);
+      }
+    }
+
+    // Send confirmation email to first delegate
+    if (delegates.length > 0) {
+      const firstDelegate = delegates[0];
+      const emailParams = {
+        to_name: firstDelegate.name,
+        to_email: firstDelegate.email,
+        txnid,
+        amount: parseFloat(amount).toFixed(2),
+        event_name: productinfo,
+        organisation: udf2,
+        designation: udf3,
+      };
+      try {
+        const emailRes = await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          emailParams
+        );
+        console.log("Confirmation email sent:", emailRes);
+      } catch (emailErr) {
+        console.error("EmailJS error:", emailErr);
+      }
+    }
+
+    // Redirect to frontend success page (NO duplicate saves/mails possible)
     return res.redirect(
       `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
         txnid
@@ -1152,11 +1262,12 @@ app.post("/payu/success", async (req, res) => {
       )}&pax=${encodeURIComponent(udf5)}`
     );
   } catch (error) {
-    // ... error handling remains
+    console.error("Error in /payu/success:", error);
+    res.redirect("https://miceandmore.co.in/payment-fail");
   }
 });
 
-// Endpoint for PayU failure callback
+// --- Endpoint for PayU failure callback ---
 app.post("/payu/fail", (req, res) => {
   res.redirect("https://miceandmore.co.in/payment-fail");
 });
