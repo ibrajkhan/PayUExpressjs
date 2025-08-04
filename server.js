@@ -1637,51 +1637,55 @@ app.use(
     origin: [
       "http://localhost:3000",
       "https://www.miceandmore.co.in",
-      "https://miceandmore.in",
+      "https://miceandmore.co.in",
     ],
     methods: ["POST", "GET"],
     credentials: true,
   })
 );
 
-// Connect to MongoDB
+// --- Mongoose connection ---
 const MONGO_URI = process.env.MONGO_URI;
 mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log("MongoDB connected successfully"))
+  .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("MongoDB connected!"))
   .catch((err) => {
-    console.error("MongoDB connection error:", err);
+    console.error("MongoDB error:", err);
     process.exit(1);
   });
 
-// Define mongoose schema & model
+// --- Mongoose schema/model ---
 const delegateSchema = new mongoose.Schema({
-  name: String,
-  email: String,
-  phone: String,
-  organisation: String,
-  designation: String,
-});
-
-const paymentSchema = new mongoose.Schema({
-  txnid: { type: String, required: true, index: true, unique: true },
+  txnid: { type: String, required: true, index: true },
   amount: String,
   organisation: String,
   designation: String,
   pax: String,
   productinfo: String,
-  delegates: [delegateSchema],
+  delegates: [
+    {
+      name: String,
+      email: String,
+      phone: String,
+      organisation: String,
+      designation: String,
+    },
+  ],
   payment_status: String,
   payment_mode: String,
   payment_date: { type: Date, default: Date.now },
 });
+const Payment = mongoose.model("Payment", delegateSchema);
 
-const Payment = mongoose.model("Payment", paymentSchema);
+// --- PayU and EmailJS config ---
+const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
+const SALT = process.env.PAYU_SALT;
+const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
+emailjs.init(EMAILJS_PUBLIC_KEY);
 
-// Initialize EmailJS
-emailjs.init(process.env.EMAILJS_PUBLIC_KEY);
-
-// Helper functions for hash generation and verification (unchanged)
+// --- Helpers for PayU hash (same as before) ---
 function generatePayuRequestHash(params) {
   const udfFields = [
     params.udf1 || "",
@@ -1709,7 +1713,6 @@ function generatePayuRequestHash(params) {
     .update(`${hashString}|${params.salt.trim()}`)
     .digest("hex");
 }
-
 function generatePayuResponseHash(params) {
   const udfFields = [
     params.udf10 || "",
@@ -1740,8 +1743,8 @@ function generatePayuResponseHash(params) {
   return crypto.createHash("sha512").update(hashString).digest("hex");
 }
 
-// Endpoint: generate hash for payment request
-app.post("/generate", async (req, res) => {
+// --- PayU endpoints for hash and payment save ---
+app.post("/generate-hash", (req, res) => {
   try {
     const {
       txnid,
@@ -1755,15 +1758,11 @@ app.post("/generate", async (req, res) => {
       udf4 = "",
       udf5 = "",
     } = req.body;
-
     if (!txnid || !amount || !firstname || !email || !productinfo) {
-      return res
-        .status(400)
-        .json({ error: "Missing mandatory fields for hash generation" });
+      return res.status(400).json({ error: "Missing fields for hash" });
     }
-
     const hash = generatePayuRequestHash({
-      key: process.env.PAYU_MERCHANT_KEY,
+      key: MERCHANT_KEY,
       txnid,
       amount,
       productinfo,
@@ -1779,21 +1778,19 @@ app.post("/generate", async (req, res) => {
       udf8: "",
       udf9: "",
       udf10: "",
-      salt: process.env.PAYU_SALT,
+      salt: SALT,
     });
-
-    console.log("Hash generated successfully for txnid:", txnid);
-    return res.json({ hash });
+    res.json({ hash });
   } catch (error) {
-    console.error("Error in /generate endpoint:", error);
-    return res.status(500).json({ error: "Error generating hash" });
+    console.error("Hash gen err:", error);
+    res.status(500).json({ error: "Hash generation failed" });
   }
 });
 
-// Endpoint: PayU payment success callback
 app.post("/payu/success", async (req, res) => {
   try {
     const {
+      key,
       txnid,
       amount,
       productinfo,
@@ -1813,17 +1810,11 @@ app.post("/payu/success", async (req, res) => {
       udf9 = "",
       udf10 = "",
     } = req.body;
-
-    console.log("Received payment success request:", req.body);
-
     if (status !== "success") {
-      console.log("Payment status not success, redirecting to failure page");
-      return res.redirect("https://miceandmore.co.in/payment-failed");
+      return res.redirect("https://miceandmore.co.in/payment-fail");
     }
-
-    // Verify hash
     const expectedHash = generatePayuResponseHash({
-      key: process.env.PAYU_MERCHANT_KEY,
+      key,
       txnid,
       amount,
       productinfo,
@@ -1841,105 +1832,93 @@ app.post("/payu/success", async (req, res) => {
       udf8,
       udf9,
       udf10,
-      salt: process.env.PAYU_SALT,
+      salt: SALT,
     });
+    console.log("Received req.body:", req.body);
 
     if (expectedHash !== receivedHash) {
       console.error(
-        `Hash mismatch detected! Expected: ${expectedHash} but got: ${receivedHash}`
+        "Hash mismatch: expected",
+        expectedHash,
+        "received",
+        receivedHash
       );
-      return res.redirect("https://miceandmore.co.in/payment-failed");
+      return res.redirect("https://miceandmore.co.in/payment-fail");
     }
-
-    // Check for duplicate
-    const existingPayment = await Payment.findOne({ txnid });
-    if (existingPayment) {
-      console.log(
-        "Duplicate transaction detected, redirecting to success page"
-      );
+    // Dedup: do not insert txnid again
+    const found = await Payment.findOne({ txnid });
+    if (found) {
       return res.redirect(
-        `https://miceandmore.co.in/payment-success?txnid=${txnid}&amount=${amount}&pax=${udf5}`
+        `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
+          txnid
+        )}&amount=${encodeURIComponent(
+          parseFloat(amount).toFixed(2)
+        )}&pax=${encodeURIComponent(udf5)}`
       );
     }
-
-    // Parse delegates safely
-    let delegatesArray = [];
+    // Parse delegates
+    let delegates = [];
     try {
-      delegatesArray = JSON.parse(udf4);
-      if (!Array.isArray(delegatesArray)) {
-        console.warn(
-          "Delegates parsed but not an array, resetting to empty array"
-        );
-        delegatesArray = [];
-      }
-    } catch (parseError) {
-      console.error("Failed to parse delegates JSON:", parseError);
-      delegatesArray = [];
+      delegates = JSON.parse(udf4);
+      console.log("Parsed delegates:", delegates);
+
+      if (!Array.isArray(delegates)) delegates = [];
+    } catch (e) {
+      console.error("Delegates parse error:", e);
+      delegates = [];
     }
+    // Save payment record
+    await Payment.create({
+      txnid,
+      amount: parseFloat(amount).toFixed(2),
+      organisation: udf2,
+      designation: udf3,
+      pax: udf5,
+      productinfo,
+      delegates,
+      payment_status: "Success",
+      payment_mode: "PayU",
+      payment_date: new Date(),
+    });
+    console.log("Payment saved for txnid:", txnid);
 
-    // Save to MongoDB
-    try {
-      await Payment.create({
-        txnid,
-        amount,
-        organisation: udf2,
-        designation: udf3,
-        pax: udf5,
-        productinfo,
-        delegates: delegatesArray,
-        payment_status: "Success",
-        payment_mode: "PayU",
-        payment_date: new Date(),
-      });
-      console.log("Payment data saved to MongoDB for txnid:", txnid);
-    } catch (dbError) {
-      console.error("Error saving payment data to MongoDB:", dbError);
-      return res.redirect("https://miceandmore.co.in/payment-failed");
-    }
-
-    // Send email to first delegate
-    if (delegatesArray.length > 0) {
-      const firstDelegate = delegatesArray[0];
-
+    // Email first delegate
+    if (delegates.length > 0) {
+      const first = delegates[0];
       const emailParams = {
-        to_name: firstDelegate.name,
-        to_email: firstDelegate.email,
-        email: firstDelegate.email,
+        to_name: first.name,
+        to_email: first.email,
+        email: first.email,
         txnid,
-        amount,
+        amount: parseFloat(amount).toFixed(2),
         event_name: productinfo,
         organisation: udf2,
         designation: udf3,
         pax: udf5,
       };
-
       try {
         await emailjs.send(
-          process.env.EMAILJS_SERVICE_ID,
-          process.env.EMAILJS_TEMPLATE_ID,
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
           emailParams
         );
-        console.log("Confirmation email sent to:", firstDelegate.email);
-      } catch (emailError) {
-        console.error("Failed to send confirmation email:", emailError);
-        // You can choose to continue or redirect failure here depending on business logic
+        console.log("Email sent to:", first.email);
+      } catch (e) {
+        console.error("EmailJS failed:", e);
       }
-    } else {
-      console.warn("No delegates to send email to.");
     }
-
-    // Redirect user to success page after everything
     return res.redirect(
-      `https://miceandmore.co.in/payment-success?txnid=${txnid}&amount=${amount}&pax=${udf5}`
+      `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
+        txnid
+      )}&amount=${encodeURIComponent(
+        parseFloat(amount).toFixed(2)
+      )}&pax=${encodeURIComponent(udf5)}`
     );
-  } catch (error) {
-    console.error("Unexpected error during payment success handling:", error);
-    return res.redirect("https://miceandmore.co.in/payment-failed");
+  } catch (e) {
+    console.error("Error in /payu/success:", e);
+    return res.redirect("https://miceandmore.co.in/payment-fail");
   }
 });
-
-// Remember to listen on the port from environment or fallback
+// all good
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`Payment server listening on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
