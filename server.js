@@ -1834,8 +1834,6 @@ app.post("/payu/success", async (req, res) => {
       udf10,
       salt: SALT,
     });
-    console.log("Received req.body:", req.body);
-
     if (expectedHash !== receivedHash) {
       console.error(
         "Hash mismatch: expected",
@@ -1860,8 +1858,6 @@ app.post("/payu/success", async (req, res) => {
     let delegates = [];
     try {
       delegates = JSON.parse(udf4);
-      console.log("Parsed delegates:", delegates);
-
       if (!Array.isArray(delegates)) delegates = [];
     } catch (e) {
       console.error("Delegates parse error:", e);
@@ -1880,8 +1876,6 @@ app.post("/payu/success", async (req, res) => {
       payment_mode: "PayU",
       payment_date: new Date(),
     });
-    console.log("Payment saved for txnid:", txnid);
-
     // Email first delegate
     if (delegates.length > 0) {
       const first = delegates[0];
