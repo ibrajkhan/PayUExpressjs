@@ -738,15 +738,239 @@
 //   console.log(`🚀 PayU Hash Server running at http://localhost:${PORT}`);
 // });
 
+// Frontend Redirect
+// require("dotenv").config();
+// const express = require("express");
+// const bodyParser = require("body-parser");
+// const crypto = require("crypto");
+// const cors = require("cors");
+
+// // For backend HTTP requests (SheetDB, node-fetch v3, dynamic import)
+// const fetch = (...args) =>
+//   import("node-fetch").then(({ default: fetch }) => fetch(...args));
+
+// const app = express();
+
+// app.use(bodyParser.json());
+// app.use(bodyParser.urlencoded({ extended: true }));
+
+// app.use(
+//   cors({
+//     origin: [
+//       "http://localhost:3000",
+//       "https://www.miceandmore.co.in",
+//       "https://miceandmore.co.in",
+//     ],
+//     methods: ["POST"],
+//     credentials: true,
+//   })
+// );
+
+// const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
+// const SALT = process.env.PAYU_SALT;
+// const SHEETDB_URL = "https://sheetdb.io/api/v1/6n0icf7jmq5rr"; // You can move this to .env if you prefer.
+
+// // --- 1. Generate PayU Hash (for payment initiation) ---
+// app.post("/generate-hash", (req, res) => {
+//   try {
+//     const {
+//       txnid,
+//       amount,
+//       productinfo,
+//       firstname,
+//       email,
+//       udf1 = "",
+//       udf2 = "",
+//       udf3 = "",
+//       udf4 = "",
+//       udf5 = "",
+//     } = req.body;
+
+//     const amountFixed = parseFloat(amount).toFixed(2);
+
+//     // PayU official: key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|salt
+//     const hashString = [
+//       (MERCHANT_KEY || "").trim(),
+//       (txnid || "").trim(),
+//       amountFixed,
+//       (productinfo || "").trim(),
+//       (firstname || "").trim(),
+//       (email || "").trim(),
+//       (udf1 || "").trim(),
+//       (udf2 || "").trim(),
+//       (udf3 || "").trim(),
+//       (udf4 || "").trim(),
+//       (udf5 || "").trim(),
+//       "",
+//       "",
+//       "",
+//       "",
+//       "", // udf6 to udf10 (empty as per PayU)
+//       (SALT || "").trim(),
+//     ].join("|");
+
+//     // Debug logging for professional troubleshooting (remove after launch)
+//     console.log("PayU HASH INPUTS:", {
+//       MERCHANT_KEY,
+//       txnid,
+//       amount: amountFixed,
+//       productinfo,
+//       firstname,
+//       email,
+//       udf1,
+//       udf2,
+//       udf3,
+//       udf4,
+//       udf5,
+//     });
+//     console.log("PayU HASH STRING:", hashString);
+//     const hash = crypto.createHash("sha512").update(hashString).digest("hex");
+//     console.log("Hash:", hash);
+
+//     res.json({ hash });
+//   } catch (error) {
+//     console.error("Error generating hash:", error);
+//     res.status(500).json({ error: "Hash generation failed" });
+//   }
+// });
+
+// // --- 2. PayU Success Handler (reverse hash for payment response validation) ---
+// app.post("/payu/success", (req, res) => {
+//   const {
+//     key,
+//     txnid,
+//     amount,
+//     productinfo,
+//     firstname,
+//     email,
+//     status,
+//     hash: receivedHash,
+//     additionalCharges,
+//     udf1 = "",
+//     udf2 = "",
+//     udf3 = "",
+//     udf4 = "",
+//     udf5 = "",
+//   } = req.body;
+
+//   const amountFixed = parseFloat(amount).toFixed(2);
+
+//   // PayU reverse hash: salt|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
+//   const reverseHashFields = [
+//     (SALT || "").trim(),
+//     (status || "").trim(),
+//     "",
+//     "",
+//     "",
+//     "",
+//     "", // udf10 to udf6 (empty if unused)
+//     (udf5 || "").trim(),
+//     (udf4 || "").trim(),
+//     (udf3 || "").trim(),
+//     (udf2 || "").trim(),
+//     (udf1 || "").trim(),
+//     (email || "").trim(),
+//     (firstname || "").trim(),
+//     (productinfo || "").trim(),
+//     amountFixed,
+//     (txnid || "").trim(),
+//     (key || "").trim(),
+//   ];
+//   let hashString = reverseHashFields.join("|");
+//   if (additionalCharges) {
+//     hashString = `${additionalCharges}|${hashString}`;
+//   }
+//   // Debug log (remove for production)
+//   console.log("PayU Success HASH STRING:", hashString);
+
+//   const expectedHash = crypto
+//     .createHash("sha512")
+//     .update(hashString)
+//     .digezst("hex");
+//   if (expectedHash !== receivedHash) {
+//     console.error("Hash mismatch", { expectedHash, receivedHash });
+//     return res.redirect("https://miceandmore.co.in/payment-fail");
+//   }
+
+//   // Redirect back to frontend with all relevant info
+//   const delegatesParam = encodeURIComponent(udf4 || "[]");
+//   res.redirect(
+//     `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
+//       txnid
+//     )}&amount=${encodeURIComponent(
+//       amountFixed
+//     )}&delegates=${delegatesParam}&organisation=${encodeURIComponent(
+//       udf2
+//     )}&designation=${encodeURIComponent(udf3)}&pax=${encodeURIComponent(udf5)}`
+//   );
+// });
+
+// // --- 3. PayU Fail Handler ---
+// app.post("/payu/fail", (req, res) => {
+//   res.redirect("https://miceandmore.co.in/payment-fail");
+// });
+
+// // --- 4. Register endpoint to save data to SheetDB (per delegate row) ---
+// app.post("/register", async (req, res) => {
+//   try {
+//     const {
+//       txnid,
+//       amount,
+//       delegates,
+//       payment_status = "Success",
+//       payment_mode = "PayU",
+//       payment_date = new Date().toISOString(),
+//     } = req.body;
+
+//     if (!Array.isArray(delegates) || delegates.length === 0) {
+//       return res
+//         .status(400)
+//         .json({ success: false, error: "Delegates data missing or invalid" });
+//     }
+
+//     const rows = delegates.map((d) => ({
+//       txnid,
+//       amount,
+//       organisation: d.organisation,
+//       designation: d.designation,
+//       delegate_name: d.name,
+//       delegate_email: d.email,
+//       delegate_phone: d.phone,
+//       payment_status,
+//       payment_mode,
+//       payment_date,
+//     }));
+
+//     const sheetRes = await fetch(SHEETDB_URL, {
+//       method: "POST",
+//       headers: { "Content-Type": "application/json" },
+//       body: JSON.stringify({ data: rows }),
+//     });
+
+//     const sheetDbResult = await sheetRes.json();
+//     res.json({ success: true, sheetDbResponse: sheetDbResult });
+//   } catch (error) {
+//     console.error("Error saving to SheetDB:", error);
+//     res
+//       .status(500)
+//       .json({ success: false, error: error.message || error.toString() });
+//   }
+// });
+
+// const PORT = process.env.PORT || 5000;
+// app.listen(PORT, () => {
+//   console.log(`🚀 PayU Hash Server running at http://localhost:${PORT}`);
+// });
+
+// Bakend redirect
 require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
 const crypto = require("crypto");
 const cors = require("cors");
-
-// For backend HTTP requests (SheetDB, node-fetch v3, dynamic import)
 const fetch = (...args) =>
   import("node-fetch").then(({ default: fetch }) => fetch(...args));
+const emailjs = require("@emailjs/nodejs");
 
 const app = express();
 
@@ -756,8 +980,8 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(
   cors({
     origin: [
-      "http://localhost:3000",
-      "https://www.miceandmore.co.in",
+      "http://localhost:3000", // Frontend dev URL
+      "https://www.miceandmore.co.in", // Production frontend
       "https://miceandmore.co.in",
     ],
     methods: ["POST"],
@@ -765,11 +989,90 @@ app.use(
   })
 );
 
-const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
-const SALT = process.env.PAYU_SALT;
-const SHEETDB_URL = "https://sheetdb.io/api/v1/6n0icf7jmq5rr"; // You can move this to .env if you prefer.
+// Load config from environment or use test constants for local testing
+const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY || "your_merchant_key";
+const SALT = process.env.PAYU_SALT || "your_salt";
+const SHEETDB_URL =
+  process.env.SHEETDB_URL || "https://sheetdb.io/api/v1/6n0icf7jmq5rr";
+const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID || "service_2j914t9";
+const EMAILJS_TEMPLATE_ID =
+  process.env.EMAILJS_TEMPLATE_ID || "template_7tn7bas";
+const EMAILJS_PUBLIC_KEY =
+  process.env.EMAILJS_PUBLIC_KEY || "ILVOZ3URY6oMsqj0U";
 
-// --- 1. Generate PayU Hash (for payment initiation) ---
+emailjs.init(EMAILJS_PUBLIC_KEY);
+
+/**
+ * Generates PayU payment request hash.
+ * @param {object} params
+ * @returns {string} SHA512 hash string
+ */
+function generatePayuRequestHash(params) {
+  const udfFields = [
+    params.udf1 || "",
+    params.udf2 || "",
+    params.udf3 || "",
+    params.udf4 || "",
+    params.udf5 || "",
+    params.udf6 || "",
+    params.udf7 || "",
+    params.udf8 || "",
+    params.udf9 || "",
+    params.udf10 || "",
+  ];
+  const hashString = [
+    params.key.trim(),
+    params.txnid.trim(),
+    parseFloat(params.amount).toFixed(2),
+    params.productinfo.trim(),
+    params.firstname.trim(),
+    params.email.trim(),
+    ...udfFields,
+  ].join("|");
+  const finalString = `${hashString}|${params.salt.trim()}`;
+  return crypto.createHash("sha512").update(finalString).digest("hex");
+}
+
+/**
+ * Generates PayU response hash for verification.
+ * @param {object} params
+ * @returns {string} SHA512 hash string
+ */
+function generatePayuResponseHash(params) {
+  // udf fields reversed order: udf10 to udf1
+  const udfFields = [
+    params.udf10 || "",
+    params.udf9 || "",
+    params.udf8 || "",
+    params.udf7 || "",
+    params.udf6 || "",
+    params.udf5 || "",
+    params.udf4 || "",
+    params.udf3 || "",
+    params.udf2 || "",
+    params.udf1 || "",
+  ];
+  const baseParts = [
+    params.salt.trim(),
+    params.status.trim(),
+    ...udfFields,
+    params.email.trim(),
+    params.firstname.trim(),
+    params.productinfo.trim(),
+    parseFloat(params.amount).toFixed(2),
+    params.txnid.trim(),
+    params.key.trim(),
+  ];
+
+  const hashSequence = params.additionalCharges
+    ? [params.additionalCharges.trim(), ...baseParts]
+    : baseParts;
+
+  const hashString = hashSequence.join("|");
+  return crypto.createHash("sha512").update(hashString).digest("hex");
+}
+
+// Endpoint for generating payment hash
 app.post("/generate-hash", (req, res) => {
   try {
     const {
@@ -785,34 +1088,16 @@ app.post("/generate-hash", (req, res) => {
       udf5 = "",
     } = req.body;
 
-    const amountFixed = parseFloat(amount).toFixed(2);
+    if (!txnid || !amount || !firstname || !email || !productinfo) {
+      return res
+        .status(400)
+        .json({ error: "Missing required fields for hash" });
+    }
 
-    // PayU official: key|txnid|amount|productinfo|firstname|email|udf1|udf2|udf3|udf4|udf5|udf6|udf7|udf8|udf9|udf10|salt
-    const hashString = [
-      (MERCHANT_KEY || "").trim(),
-      (txnid || "").trim(),
-      amountFixed,
-      (productinfo || "").trim(),
-      (firstname || "").trim(),
-      (email || "").trim(),
-      (udf1 || "").trim(),
-      (udf2 || "").trim(),
-      (udf3 || "").trim(),
-      (udf4 || "").trim(),
-      (udf5 || "").trim(),
-      "",
-      "",
-      "",
-      "",
-      "", // udf6 to udf10 (empty as per PayU)
-      (SALT || "").trim(),
-    ].join("|");
-
-    // Debug logging for professional troubleshooting (remove after launch)
-    console.log("PayU HASH INPUTS:", {
-      MERCHANT_KEY,
+    const hash = generatePayuRequestHash({
+      key: MERCHANT_KEY,
       txnid,
-      amount: amountFixed,
+      amount,
       productinfo,
       firstname,
       email,
@@ -821,10 +1106,13 @@ app.post("/generate-hash", (req, res) => {
       udf3,
       udf4,
       udf5,
+      udf6: "",
+      udf7: "",
+      udf8: "",
+      udf9: "",
+      udf10: "",
+      salt: SALT,
     });
-    console.log("PayU HASH STRING:", hashString);
-    const hash = crypto.createHash("sha512").update(hashString).digest("hex");
-    console.log("Hash:", hash);
 
     res.json({ hash });
   } catch (error) {
@@ -833,130 +1121,152 @@ app.post("/generate-hash", (req, res) => {
   }
 });
 
-// --- 2. PayU Success Handler (reverse hash for payment response validation) ---
-app.post("/payu/success", (req, res) => {
-  const {
-    key,
-    txnid,
-    amount,
-    productinfo,
-    firstname,
-    email,
-    status,
-    hash: receivedHash,
-    additionalCharges,
-    udf1 = "",
-    udf2 = "",
-    udf3 = "",
-    udf4 = "",
-    udf5 = "",
-  } = req.body;
+// Endpoint to handle PayU payment success callback
+app.post("/payu/success", async (req, res) => {
+  try {
+    const {
+      key,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      status,
+      hash: receivedHash,
+      additionalCharges,
+      udf1 = "",
+      udf2 = "",
+      udf3 = "",
+      udf4 = "",
+      udf5 = "",
+      udf6 = "",
+      udf7 = "",
+      udf8 = "",
+      udf9 = "",
+      udf10 = "",
+    } = req.body;
 
-  const amountFixed = parseFloat(amount).toFixed(2);
+    if (status !== "success") {
+      return res.redirect("https://miceandmore.co.in/payment-fail");
+    }
 
-  // PayU reverse hash: salt|status|udf10|udf9|udf8|udf7|udf6|udf5|udf4|udf3|udf2|udf1|email|firstname|productinfo|amount|txnid|key
-  const reverseHashFields = [
-    (SALT || "").trim(),
-    (status || "").trim(),
-    "",
-    "",
-    "",
-    "",
-    "", // udf10 to udf6 (empty if unused)
-    (udf5 || "").trim(),
-    (udf4 || "").trim(),
-    (udf3 || "").trim(),
-    (udf2 || "").trim(),
-    (udf1 || "").trim(),
-    (email || "").trim(),
-    (firstname || "").trim(),
-    (productinfo || "").trim(),
-    amountFixed,
-    (txnid || "").trim(),
-    (key || "").trim(),
-  ];
-  let hashString = reverseHashFields.join("|");
-  if (additionalCharges) {
-    hashString = `${additionalCharges}|${hashString}`;
+    const expectedHash = generatePayuResponseHash({
+      key,
+      txnid,
+      amount,
+      productinfo,
+      firstname,
+      email,
+      status,
+      additionalCharges,
+      udf1,
+      udf2,
+      udf3,
+      udf4,
+      udf5,
+      udf6,
+      udf7,
+      udf8,
+      udf9,
+      udf10,
+      salt: SALT,
+    });
+
+    if (expectedHash !== receivedHash) {
+      console.error(
+        `Hash mismatch! Expected: ${expectedHash}, Received: ${receivedHash}`
+      );
+      return res.redirect("https://miceandmore.co.in/payment-fail");
+    }
+
+    // Parse delegates array from udf4 (JSON string)
+    let delegates = [];
+    try {
+      delegates = JSON.parse(udf4);
+      if (!Array.isArray(delegates)) delegates = [];
+    } catch (e) {
+      console.error("Failed to parse delegates JSON:", e);
+    }
+
+    // Save to SheetDB if delegates present
+    if (delegates.length > 0) {
+      const rows = delegates.map((d) => ({
+        txnid,
+        amount: parseFloat(amount).toFixed(2),
+        organisation: udf2,
+        designation: udf3,
+        delegate_name: d.name,
+        delegate_email: d.email,
+        delegate_phone: d.phone,
+        payment_status: "Success",
+        payment_mode: "PayU",
+        payment_date: new Date().toISOString(),
+      }));
+
+      try {
+        const sheetdbRes = await fetch(SHEETDB_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ data: rows }),
+        });
+
+        if (!sheetdbRes.ok) {
+          console.error(
+            "Failed to save data to SheetDB:",
+            await sheetdbRes.text()
+          );
+        }
+      } catch (err) {
+        console.error("Error calling SheetDB:", err);
+      }
+    }
+
+    // Send confirmation email to first delegate
+    if (delegates.length > 0) {
+      const firstDelegate = delegates[0];
+
+      const emailParams = {
+        to_name: firstDelegate.name,
+        to_email: firstDelegate.email,
+        txnid,
+        amount: parseFloat(amount).toFixed(2),
+        event_name: productinfo,
+        organisation: udf2,
+        designation: udf3,
+      };
+
+      try {
+        const emailRes = await emailjs.send(
+          EMAILJS_SERVICE_ID,
+          EMAILJS_TEMPLATE_ID,
+          emailParams
+        );
+        console.log("Confirmation email sent:", emailRes);
+      } catch (emailErr) {
+        console.error("EmailJS error:", emailErr);
+      }
+    }
+
+    // Redirect to frontend success page with safe params (no delegates JSON)
+    return res.redirect(
+      `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
+        txnid
+      )}&amount=${encodeURIComponent(
+        parseFloat(amount).toFixed(2)
+      )}&pax=${encodeURIComponent(udf5)}`
+    );
+  } catch (error) {
+    console.error("Error in /payu/success:", error);
+    res.redirect("https://miceandmore.co.in/payment-fail");
   }
-  // Debug log (remove for production)
-  console.log("PayU Success HASH STRING:", hashString);
-
-  const expectedHash = crypto
-    .createHash("sha512")
-    .update(hashString)
-    .digezst("hex");
-  if (expectedHash !== receivedHash) {
-    console.error("Hash mismatch", { expectedHash, receivedHash });
-    return res.redirect("https://miceandmore.co.in/payment-fail");
-  }
-
-  // Redirect back to frontend with all relevant info
-  const delegatesParam = encodeURIComponent(udf4 || "[]");
-  res.redirect(
-    `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
-      txnid
-    )}&amount=${encodeURIComponent(
-      amountFixed
-    )}&delegates=${delegatesParam}&organisation=${encodeURIComponent(
-      udf2
-    )}&designation=${encodeURIComponent(udf3)}&pax=${encodeURIComponent(udf5)}`
-  );
 });
 
-// --- 3. PayU Fail Handler ---
+// Endpoint for PayU failure callback
 app.post("/payu/fail", (req, res) => {
   res.redirect("https://miceandmore.co.in/payment-fail");
 });
 
-// --- 4. Register endpoint to save data to SheetDB (per delegate row) ---
-app.post("/register", async (req, res) => {
-  try {
-    const {
-      txnid,
-      amount,
-      delegates,
-      payment_status = "Success",
-      payment_mode = "PayU",
-      payment_date = new Date().toISOString(),
-    } = req.body;
-
-    if (!Array.isArray(delegates) || delegates.length === 0) {
-      return res
-        .status(400)
-        .json({ success: false, error: "Delegates data missing or invalid" });
-    }
-
-    const rows = delegates.map((d) => ({
-      txnid,
-      amount,
-      organisation: d.organisation,
-      designation: d.designation,
-      delegate_name: d.name,
-      delegate_email: d.email,
-      delegate_phone: d.phone,
-      payment_status,
-      payment_mode,
-      payment_date,
-    }));
-
-    const sheetRes = await fetch(SHEETDB_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ data: rows }),
-    });
-
-    const sheetDbResult = await sheetRes.json();
-    res.json({ success: true, sheetDbResponse: sheetDbResult });
-  } catch (error) {
-    console.error("Error saving to SheetDB:", error);
-    res
-      .status(500)
-      .json({ success: false, error: error.message || error.toString() });
-  }
-});
-
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 PayU Hash Server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server listening on port ${PORT}`);
 });
