@@ -990,15 +990,12 @@ app.use(
 );
 
 // === ENV/Config ===
-const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY || "your_merchant_key";
-const SALT = process.env.PAYU_SALT || "your_salt";
-const SHEETDB_URL =
-  process.env.SHEETDB_URL || "https://sheetdb.io/api/v1/6n0icf7jmq5rr";
-const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID || "service_2j914t9";
-const EMAILJS_TEMPLATE_ID =
-  process.env.EMAILJS_TEMPLATE_ID || "template_7tn7bas";
-const EMAILJS_PUBLIC_KEY =
-  process.env.EMAILJS_PUBLIC_KEY || "ILVOZ3URY6oMsqj0U";
+const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
+const SALT = process.env.PAYU_SALT;
+const SHEETDB_URL = process.env.SHEETDB_URL;
+const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
+const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
+const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
 
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
