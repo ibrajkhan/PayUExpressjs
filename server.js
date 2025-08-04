@@ -962,7 +962,340 @@
 //   console.log(`🚀 PayU Hash Server running at http://localhost:${PORT}`);
 // });
 
-// Bakend redirect
+// Bakend redirect sucessful payment logic but email and data not saved
+// require("dotenv").config();
+// const express = require("express");
+// const bodyParser = require("body-parser");
+// const crypto = require("crypto");
+// const cors = require("cors");
+// const fetch = (...args) =>
+//   import("node-fetch").then(({ default: fetch }) => fetch(...args));
+// const emailjs = require("@emailjs/nodejs");
+
+// const app = express();
+
+// app.use(bodyParser.json());
+// app.use(bodyParser.urlencoded({ extended: true }));
+
+// app.use(
+//   cors({
+//     origin: [
+//       "http://localhost:3000", // Frontend dev URL
+//       "https://www.miceandmore.co.in", // Production frontend
+//       "https://miceandmore.co.in",
+//     ],
+//     methods: ["POST"],
+//     credentials: true,
+//   })
+// );
+
+// // === ENV CONFIG ===
+// const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
+// const SALT = process.env.PAYU_SALT;
+// const SHEETDB_URL = process.env.SHEETDB_URL;
+// const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
+// const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
+// const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
+
+// if (
+//   !MERCHANT_KEY ||
+//   !SALT ||
+//   !SHEETDB_URL ||
+//   !EMAILJS_SERVICE_ID ||
+//   !EMAILJS_TEMPLATE_ID ||
+//   !EMAILJS_PUBLIC_KEY
+// ) {
+//   console.error(
+//     "ERROR: One or more required environment variables are missing! Please check .env"
+//   );
+//   process.exit(1);
+// }
+
+// emailjs.init(EMAILJS_PUBLIC_KEY);
+
+// // --- Generate PayU payment request hash ---
+// function generatePayuRequestHash(params) {
+//   const udfFields = [
+//     params.udf1 || "",
+//     params.udf2 || "",
+//     params.udf3 || "",
+//     params.udf4 || "",
+//     params.udf5 || "",
+//     params.udf6 || "",
+//     params.udf7 || "",
+//     params.udf8 || "",
+//     params.udf9 || "",
+//     params.udf10 || "",
+//   ];
+//   const hashString = [
+//     params.key.trim(),
+//     params.txnid.trim(),
+//     parseFloat(params.amount).toFixed(2),
+//     params.productinfo.trim(),
+//     params.firstname.trim(),
+//     params.email.trim(),
+//     ...udfFields,
+//   ].join("|");
+//   const finalString = `${hashString}|${params.salt.trim()}`;
+//   return crypto.createHash("sha512").update(finalString).digest("hex");
+// }
+
+// // --- Generate PayU response hash for verification ---
+// function generatePayuResponseHash(params) {
+//   const udfFields = [
+//     params.udf10 || "",
+//     params.udf9 || "",
+//     params.udf8 || "",
+//     params.udf7 || "",
+//     params.udf6 || "",
+//     params.udf5 || "",
+//     params.udf4 || "",
+//     params.udf3 || "",
+//     params.udf2 || "",
+//     params.udf1 || "",
+//   ];
+//   const baseParts = [
+//     params.salt.trim(),
+//     params.status.trim(),
+//     ...udfFields,
+//     params.email.trim(),
+//     params.firstname.trim(),
+//     params.productinfo.trim(),
+//     parseFloat(params.amount).toFixed(2),
+//     params.txnid.trim(),
+//     params.key.trim(),
+//   ];
+
+//   const hashSequence = params.additionalCharges
+//     ? [params.additionalCharges.trim(), ...baseParts]
+//     : baseParts;
+
+//   const hashString = hashSequence.join("|");
+//   return crypto.createHash("sha512").update(hashString).digest("hex");
+// }
+
+// // --- Generate hash endpoint ---
+// app.post("/generate-hash", (req, res) => {
+//   try {
+//     const {
+//       txnid,
+//       amount,
+//       productinfo,
+//       firstname,
+//       email,
+//       udf1 = "",
+//       udf2 = "",
+//       udf3 = "",
+//       udf4 = "",
+//       udf5 = "",
+//     } = req.body;
+
+//     if (!txnid || !amount || !firstname || !email || !productinfo) {
+//       return res
+//         .status(400)
+//         .json({ error: "Missing required fields for hash" });
+//     }
+
+//     const hash = generatePayuRequestHash({
+//       key: MERCHANT_KEY,
+//       txnid,
+//       amount,
+//       productinfo,
+//       firstname,
+//       email,
+//       udf1,
+//       udf2,
+//       udf3,
+//       udf4,
+//       udf5,
+//       udf6: "",
+//       udf7: "",
+//       udf8: "",
+//       udf9: "",
+//       udf10: "",
+//       salt: SALT,
+//     });
+
+//     res.json({ hash });
+//   } catch (error) {
+//     console.error("Error generating hash:", error);
+//     res.status(500).json({ error: "Hash generation failed" });
+//   }
+// });
+
+// // --- PayU success callback ---
+// app.post("/payu/success", async (req, res) => {
+//   try {
+//     const {
+//       key,
+//       txnid,
+//       amount,
+//       productinfo,
+//       firstname,
+//       email,
+//       status,
+//       hash: receivedHash,
+//       additionalCharges,
+//       udf1 = "",
+//       udf2 = "",
+//       udf3 = "",
+//       udf4 = "",
+//       udf5 = "",
+//       udf6 = "",
+//       udf7 = "",
+//       udf8 = "",
+//       udf9 = "",
+//       udf10 = "",
+//     } = req.body;
+
+//     if (status !== "success") {
+//       return res.redirect("https://miceandmore.co.in/payment-fail");
+//     }
+
+//     const expectedHash = generatePayuResponseHash({
+//       key,
+//       txnid,
+//       amount,
+//       productinfo,
+//       firstname,
+//       email,
+//       status,
+//       additionalCharges,
+//       udf1,
+//       udf2,
+//       udf3,
+//       udf4,
+//       udf5,
+//       udf6,
+//       udf7,
+//       udf8,
+//       udf9,
+//       udf10,
+//       salt: SALT,
+//     });
+
+//     if (expectedHash !== receivedHash) {
+//       console.error(
+//         `Hash mismatch! Expected: ${expectedHash}, Received: ${receivedHash}`
+//       );
+//       return res.redirect("https://miceandmore.co.in/payment-fail");
+//     }
+
+//     // Deduplication - check if txnid processed before
+//     const checkUrl = `${SHEETDB_URL}/search?txnid=${encodeURIComponent(txnid)}`;
+//     let alreadyProcessed = false;
+//     try {
+//       const checkRes = await fetch(checkUrl);
+//       const existing = await checkRes.json();
+//       alreadyProcessed = Array.isArray(existing) && existing.length > 0;
+//     } catch (e) {
+//       console.error("SheetDB check failed:", e);
+//     }
+//     if (alreadyProcessed) {
+//       // Redirect success without reprocessing
+//       return res.redirect(
+//         `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
+//           txnid
+//         )}&amount=${encodeURIComponent(
+//           parseFloat(amount).toFixed(2)
+//         )}&pax=${encodeURIComponent(udf5)}`
+//       );
+//     }
+
+//     // Parse delegates JSON
+//     let delegates = [];
+//     try {
+//       delegates = JSON.parse(udf4);
+//       if (!Array.isArray(delegates)) delegates = [];
+//     } catch (e) {
+//       console.error("Failed to parse delegates JSON:", e);
+//       delegates = [];
+//     }
+
+//     // Save delegates to SheetDB
+//     if (delegates.length > 0) {
+//       const rows = delegates.map((d) => ({
+//         txnid,
+//         amount: parseFloat(amount).toFixed(2),
+//         organisation: udf2,
+//         designation: udf3,
+//         delegate_name: d.name,
+//         delegate_email: d.email,
+//         delegate_phone: d.phone,
+//         payment_status: "Success",
+//         payment_mode: "PayU",
+//         payment_date: new Date().toISOString(),
+//       }));
+
+//       try {
+//         const sheetdbRes = await fetch(SHEETDB_URL, {
+//           method: "POST",
+//           headers: { "Content-Type": "application/json" },
+//           body: JSON.stringify({ data: rows }),
+//         });
+//         if (!sheetdbRes.ok) {
+//           const errtxt = await sheetdbRes.text();
+//           console.error("Failed to save data to SheetDB:", errtxt);
+//         } else {
+//           console.log("Saved to SheetDB OK");
+//         }
+//       } catch (err) {
+//         console.error("Error calling SheetDB:", err);
+//       }
+//     }
+
+//     // Send confirmation email to first delegate
+//     if (delegates.length > 0) {
+//       const firstDelegate = delegates[0];
+
+//       const emailParams = {
+//         to_name: firstDelegate.name,
+//         to_email: firstDelegate.email,
+//         email: firstDelegate.email,
+//         txnid,
+//         amount: parseFloat(amount).toFixed(2),
+//         event_name: productinfo,
+//         organisation: udf2,
+//         designation: udf3,
+//         pax: udf5,
+//       };
+
+//       try {
+//         const emailRes = await emailjs.send(
+//           EMAILJS_SERVICE_ID,
+//           EMAILJS_TEMPLATE_ID,
+//           emailParams
+//         );
+//         console.log("Confirmation email sent:", emailRes);
+//       } catch (emailErr) {
+//         console.error("EmailJS error:", emailErr);
+//       }
+//     }
+
+//     // All done, redirect to frontend success page
+//     return res.redirect(
+//       `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
+//         txnid
+//       )}&amount=${encodeURIComponent(
+//         parseFloat(amount).toFixed(2)
+//       )}&pax=${encodeURIComponent(udf5)}`
+//     );
+//   } catch (error) {
+//     console.error("Error in /payu/success:", error);
+//     return res.redirect("https://miceandmore.co.in/payment-fail");
+//   }
+// });
+
+// // PayU failure handler
+// app.post("/payu/fail", (req, res) => {
+//   res.redirect("https://miceandmore.co.in/payment-fail");
+// });
+
+// const PORT = process.env.PORT || 5000;
+// app.listen(PORT, () => {
+//   console.log(`🚀 Server listening on port ${PORT}`);
+// });
+
 require("dotenv").config();
 const express = require("express");
 const bodyParser = require("body-parser");
@@ -1139,8 +1472,8 @@ app.post("/payu/success", async (req, res) => {
       udf1 = "",
       udf2 = "",
       udf3 = "",
-      udf4 = "",
-      udf5 = "",
+      udf4 = "", // delegates JSON string
+      udf5 = "", // pax
       udf6 = "",
       udf7 = "",
       udf8 = "",
@@ -1152,6 +1485,7 @@ app.post("/payu/success", async (req, res) => {
       return res.redirect("https://miceandmore.co.in/payment-fail");
     }
 
+    // Verify hash (using your existing correct function)
     const expectedHash = generatePayuResponseHash({
       key,
       txnid,
@@ -1181,108 +1515,21 @@ app.post("/payu/success", async (req, res) => {
       return res.redirect("https://miceandmore.co.in/payment-fail");
     }
 
-    // Deduplication - check if txnid processed before
-    const checkUrl = `${SHEETDB_URL}/search?txnid=${encodeURIComponent(txnid)}`;
-    let alreadyProcessed = false;
-    try {
-      const checkRes = await fetch(checkUrl);
-      const existing = await checkRes.json();
-      alreadyProcessed = Array.isArray(existing) && existing.length > 0;
-    } catch (e) {
-      console.error("SheetDB check failed:", e);
-    }
-    if (alreadyProcessed) {
-      // Redirect success without reprocessing
-      return res.redirect(
-        `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
-          txnid
-        )}&amount=${encodeURIComponent(
-          parseFloat(amount).toFixed(2)
-        )}&pax=${encodeURIComponent(udf5)}`
-      );
-    }
+    // Redirect with all needed info including delegates (URL-encoded)
+    const redirectUrl = `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
+      txnid
+    )}&amount=${encodeURIComponent(
+      parseFloat(amount).toFixed(2)
+    )}&pax=${encodeURIComponent(udf5)}&delegates=${encodeURIComponent(
+      udf4
+    )}&organisation=${encodeURIComponent(
+      udf2
+    )}&designation=${encodeURIComponent(udf3)}`;
 
-    // Parse delegates JSON
-    let delegates = [];
-    try {
-      delegates = JSON.parse(udf4);
-      if (!Array.isArray(delegates)) delegates = [];
-    } catch (e) {
-      console.error("Failed to parse delegates JSON:", e);
-      delegates = [];
-    }
-
-    // Save delegates to SheetDB
-    if (delegates.length > 0) {
-      const rows = delegates.map((d) => ({
-        txnid,
-        amount: parseFloat(amount).toFixed(2),
-        organisation: udf2,
-        designation: udf3,
-        delegate_name: d.name,
-        delegate_email: d.email,
-        delegate_phone: d.phone,
-        payment_status: "Success",
-        payment_mode: "PayU",
-        payment_date: new Date().toISOString(),
-      }));
-
-      try {
-        const sheetdbRes = await fetch(SHEETDB_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ data: rows }),
-        });
-        if (!sheetdbRes.ok) {
-          const errtxt = await sheetdbRes.text();
-          console.error("Failed to save data to SheetDB:", errtxt);
-        } else {
-          console.log("Saved to SheetDB OK");
-        }
-      } catch (err) {
-        console.error("Error calling SheetDB:", err);
-      }
-    }
-
-    // Send confirmation email to first delegate
-    if (delegates.length > 0) {
-      const firstDelegate = delegates[0];
-
-      const emailParams = {
-        to_name: firstDelegate.name,
-        to_email: firstDelegate.email,
-        email: firstDelegate.email,
-        txnid,
-        amount: parseFloat(amount).toFixed(2),
-        event_name: productinfo,
-        organisation: udf2,
-        designation: udf3,
-        pax: udf5,
-      };
-
-      try {
-        const emailRes = await emailjs.send(
-          EMAILJS_SERVICE_ID,
-          EMAILJS_TEMPLATE_ID,
-          emailParams
-        );
-        console.log("Confirmation email sent:", emailRes);
-      } catch (emailErr) {
-        console.error("EmailJS error:", emailErr);
-      }
-    }
-
-    // All done, redirect to frontend success page
-    return res.redirect(
-      `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
-        txnid
-      )}&amount=${encodeURIComponent(
-        parseFloat(amount).toFixed(2)
-      )}&pax=${encodeURIComponent(udf5)}`
-    );
+    return res.redirect(redirectUrl);
   } catch (error) {
     console.error("Error in /payu/success:", error);
-    return res.redirect("https://miceandmore.co.in/payment-fail");
+    res.redirect("https://miceandmore.co.in/payment-fail");
   }
 });
 
