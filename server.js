@@ -1313,16 +1313,15 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(
   cors({
     origin: [
-      "http://localhost:3000", // Frontend dev URL
-      "https://www.miceandmore.co.in", // Production frontend
+      "http://localhost:3000", // frontend local dev
+      "https://www.miceandmore.co.in",
       "https://miceandmore.co.in",
     ],
-    methods: ["POST"],
+    methods: ["GET", "POST"],
     credentials: true,
   })
 );
 
-// === ENV CONFIG ===
 const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
 const SALT = process.env.PAYU_SALT;
 const SHEETDB_URL = process.env.SHEETDB_URL;
@@ -1339,14 +1338,14 @@ if (
   !EMAILJS_PUBLIC_KEY
 ) {
   console.error(
-    "ERROR: One or more required environment variables are missing! Please check .env"
+    "ERROR: Missing keys in environment variables. Please check your .env file."
   );
   process.exit(1);
 }
 
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
-// --- Generate PayU payment request hash ---
+// Helper: Generate PayU payment request hash
 function generatePayuRequestHash(params) {
   const udfFields = [
     params.udf1 || "",
@@ -1369,11 +1368,13 @@ function generatePayuRequestHash(params) {
     params.email.trim(),
     ...udfFields,
   ].join("|");
-  const finalString = `${hashString}|${params.salt.trim()}`;
-  return crypto.createHash("sha512").update(finalString).digest("hex");
+  return crypto
+    .createHash("sha512")
+    .update(`${hashString}|${params.salt.trim()}`)
+    .digest("hex");
 }
 
-// --- Generate PayU response hash for verification ---
+// Helper: Generate PayU response hash for verification
 function generatePayuResponseHash(params) {
   const udfFields = [
     params.udf10 || "",
@@ -1387,7 +1388,7 @@ function generatePayuResponseHash(params) {
     params.udf2 || "",
     params.udf1 || "",
   ];
-  const baseParts = [
+  let baseParts = [
     params.salt.trim(),
     params.status.trim(),
     ...udfFields,
@@ -1398,16 +1399,14 @@ function generatePayuResponseHash(params) {
     params.txnid.trim(),
     params.key.trim(),
   ];
-
-  const hashSequence = params.additionalCharges
-    ? [params.additionalCharges.trim(), ...baseParts]
-    : baseParts;
-
-  const hashString = hashSequence.join("|");
+  if (params.additionalCharges) {
+    baseParts = [params.additionalCharges.trim(), ...baseParts];
+  }
+  const hashString = baseParts.join("|");
   return crypto.createHash("sha512").update(hashString).digest("hex");
 }
 
-// --- Generate hash endpoint ---
+// Endpoint: generate payment request hash for frontend
 app.post("/generate-hash", (req, res) => {
   try {
     const {
@@ -1456,7 +1455,7 @@ app.post("/generate-hash", (req, res) => {
   }
 });
 
-// --- PayU success callback ---
+// Endpoint: PayU Success callback, saves data and sends emails safely once
 app.post("/payu/success", async (req, res) => {
   try {
     const {
@@ -1472,8 +1471,8 @@ app.post("/payu/success", async (req, res) => {
       udf1 = "",
       udf2 = "",
       udf3 = "",
-      udf4 = "", // delegates JSON string
-      udf5 = "", // pax
+      udf4 = "",
+      udf5 = "",
       udf6 = "",
       udf7 = "",
       udf8 = "",
@@ -1485,7 +1484,7 @@ app.post("/payu/success", async (req, res) => {
       return res.redirect("https://miceandmore.co.in/payment-fail");
     }
 
-    // Verify hash (using your existing correct function)
+    // Verify hash
     const expectedHash = generatePayuResponseHash({
       key,
       txnid,
@@ -1507,7 +1506,6 @@ app.post("/payu/success", async (req, res) => {
       udf10,
       salt: SALT,
     });
-
     if (expectedHash !== receivedHash) {
       console.error(
         `Hash mismatch! Expected: ${expectedHash}, Received: ${receivedHash}`
@@ -1515,7 +1513,9 @@ app.post("/payu/success", async (req, res) => {
       return res.redirect("https://miceandmore.co.in/payment-fail");
     }
 
-    // Redirect with all needed info including delegates (URL-encoded)
+    // Redirect to frontend success page with all info
+    // We SEND delegates JSON here (careful about URL length with large data)
+    // Alternatively, store delegates server-side and expose via API (recommended)
     const redirectUrl = `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
       txnid
     )}&amount=${encodeURIComponent(
@@ -1533,9 +1533,63 @@ app.post("/payu/success", async (req, res) => {
   }
 });
 
-// PayU failure handler
-app.post("/payu/fail", (req, res) => {
-  res.redirect("https://miceandmore.co.in/payment-fail");
+// OPTIONAL: Endpoint to save delegates from frontend success page submission
+// (Use this for secure storing and to avoid putting delegates in URL)
+app.post("/register", async (req, res) => {
+  try {
+    const { txnid, amount, organisation, designation, delegates } = req.body;
+    if (!Array.isArray(delegates) || delegates.length === 0) {
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid delegates data" });
+    }
+
+    // Check if already saved (optional, You may add similar deduplication here)
+    const checkUrl = `${SHEETDB_URL}/search?txnid=${encodeURIComponent(txnid)}`;
+    const checkRes = await fetch(checkUrl);
+    const existing = await checkRes.json();
+    if (Array.isArray(existing) && existing.length > 0) {
+      return res.json({
+        success: true,
+        message: "Delegates already registered",
+      });
+    }
+
+    // Prepare rows
+    const rows = delegates.map((d) => ({
+      txnid,
+      amount,
+      organisation,
+      designation,
+      delegate_name: d.name,
+      delegate_email: d.email,
+      delegate_phone: d.phone,
+      payment_status: "Success",
+      payment_mode: "PayU",
+      payment_date: new Date().toISOString(),
+    }));
+
+    const sheetRes = await fetch(SHEETDB_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data: rows }),
+    });
+
+    if (!sheetRes.ok) {
+      const msg = await sheetRes.text();
+      console.error("SheetDB save failed:", msg);
+      return res
+        .status(500)
+        .json({ success: false, error: "Failed to save delegates" });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Error in /register:", err);
+    res
+      .status(500)
+      .json({ success: false, error: err.message || err.toString() });
+  }
 });
 
 const PORT = process.env.PORT || 5000;
