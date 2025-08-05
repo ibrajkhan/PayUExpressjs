@@ -1622,46 +1622,16 @@
 //   console.log(`🚀 Server running at port ${PORT}`);
 // });
 
-// require("dotenv").config();
-// const express = require("express");
-// const mongoose = require("mongoose");
-// const bodyParser = require("body-parser");
-// const crypto = require("crypto");
-// const cors = require("cors");
-// const emailjs = require("@emailjs/nodejs");
-
-// const app = express();
-
-// app.use(bodyParser.json());
-// app.use(express.urlencoded({ extended: true }));
-
-// app.use(
-//   cors({
-//     origin: [
-//       "http://localhost:3000",
-//       "https://www.miceandmore.co.in",
-//       "https://miceandmore.co.in",
-//     ],
-//     methods: ["POST", "GET"],
-//     credentials: true,
-//   })
-// );
-
-// Express js server
 require("dotenv").config();
 const express = require("express");
 const mongoose = require("mongoose");
+const bodyParser = require("body-parser");
 const crypto = require("crypto");
 const cors = require("cors");
 const emailjs = require("@emailjs/nodejs");
 
 const app = express();
-
-// ✅ Built-in body parsers (no need for body-parser package)
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// ✅ CORS setup
+app.use(bodyParser.json());
 app.use(
   cors({
     origin: [
@@ -1674,17 +1644,17 @@ app.use(
   })
 );
 
-// --- MongoDB connection ---
+// --- Mongoose connection ---
 const MONGO_URI = process.env.MONGO_URI;
 mongoose
-  .connect(MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected"))
+  .connect(MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
+  .then(() => console.log("MongoDB connected!"))
   .catch((err) => {
-    console.error("❌ MongoDB connection error:", err);
+    console.error("MongoDB error:", err);
     process.exit(1);
   });
 
-// --- Payment schema & model ---
+// --- Mongoose schema/model ---
 const delegateSchema = new mongoose.Schema({
   txnid: { type: String, required: true, index: true },
   amount: String,
@@ -1705,9 +1675,9 @@ const delegateSchema = new mongoose.Schema({
   payment_mode: String,
   payment_date: { type: Date, default: Date.now },
 });
-const Payment = mongoose.model("Payment", delegateSchema, "payments"); // Force collection name to `payments`
+const Payment = mongoose.model("Payment", delegateSchema);
 
-// --- Config ---
+// --- PayU and EmailJS config ---
 const MERCHANT_KEY = process.env.PAYU_MERCHANT_KEY;
 const SALT = process.env.PAYU_SALT;
 const EMAILJS_SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
@@ -1715,7 +1685,7 @@ const EMAILJS_TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
 const EMAILJS_PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
 emailjs.init(EMAILJS_PUBLIC_KEY);
 
-// --- Hash Generators ---
+// --- Helpers for PayU hash (same as before) ---
 function generatePayuRequestHash(params) {
   const udfFields = [
     params.udf1 || "",
@@ -1743,7 +1713,6 @@ function generatePayuRequestHash(params) {
     .update(`${hashString}|${params.salt.trim()}`)
     .digest("hex");
 }
-
 function generatePayuResponseHash(params) {
   const udfFields = [
     params.udf10 || "",
@@ -1768,16 +1737,13 @@ function generatePayuResponseHash(params) {
     params.txnid.trim(),
     params.key.trim(),
   ];
-  if (params.additionalCharges) {
+  if (params.additionalCharges)
     baseParts = [params.additionalCharges.trim(), ...baseParts];
-  }
-
   const hashString = baseParts.join("|");
-  console.log("🧮 Hash string used:", hashString);
   return crypto.createHash("sha512").update(hashString).digest("hex");
 }
 
-// --- Endpoint to generate hash for PayU request ---
+// --- PayU endpoints for hash and payment save ---
 app.post("/generate-hash", (req, res) => {
   try {
     const {
@@ -1792,11 +1758,9 @@ app.post("/generate-hash", (req, res) => {
       udf4 = "",
       udf5 = "",
     } = req.body;
-
     if (!txnid || !amount || !firstname || !email || !productinfo) {
       return res.status(400).json({ error: "Missing fields for hash" });
     }
-
     const hash = generatePayuRequestHash({
       key: MERCHANT_KEY,
       txnid,
@@ -1816,21 +1780,15 @@ app.post("/generate-hash", (req, res) => {
       udf10: "",
       salt: SALT,
     });
-
     res.json({ hash });
   } catch (error) {
-    console.error("❌ Error generating hash:", error);
+    console.error("Hash gen err:", error);
     res.status(500).json({ error: "Hash generation failed" });
   }
 });
 
-// --- Endpoint PayU hits after success ---
 app.post("/payu/success", async (req, res) => {
   try {
-    console.log("\n=== 🔔 Incoming PayU Success Callback ===");
-    console.log(req.body);
-    console.log("=========================================\n");
-
     const {
       key,
       txnid,
@@ -1853,11 +1811,13 @@ app.post("/payu/success", async (req, res) => {
       udf10 = "",
     } = req.body;
 
+    console.log("💳 PayU Transaction ID (mihpayid):", req.body.mihpayid);
+    console.log("💳 Alternative (payuMoneyId):", req.body.payuMoneyId);
+
+    console.log(status, "Checking Status");
     if (status !== "success") {
-      console.warn("⚠️ Payment status is not 'success':", status);
       return res.redirect("https://miceandmore.co.in/payment-fail");
     }
-
     const expectedHash = generatePayuResponseHash({
       key,
       txnid,
@@ -1879,19 +1839,18 @@ app.post("/payu/success", async (req, res) => {
       udf10,
       salt: SALT,
     });
-
-    console.log("✅ Expected Hash:", expectedHash);
-    console.log("🟡 Received Hash:", receivedHash);
-
     if (expectedHash !== receivedHash) {
-      console.error("❌ Hash mismatch! Redirecting to fail.");
+      console.error(
+        "Hash mismatch: expected",
+        expectedHash,
+        "received",
+        receivedHash
+      );
       return res.redirect("https://miceandmore.co.in/payment-fail");
     }
-
-    // Prevent duplicate insert
-    const existing = await Payment.findOne({ txnid });
-    if (existing) {
-      console.log("🔁 Payment already exists for txnid:", txnid);
+    // Dedup: do not insert txnid again
+    const found = await Payment.findOne({ txnid });
+    if (found) {
       return res.redirect(
         `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
           txnid
@@ -1900,18 +1859,16 @@ app.post("/payu/success", async (req, res) => {
         )}&pax=${encodeURIComponent(udf5)}`
       );
     }
-
     // Parse delegates
     let delegates = [];
     try {
       delegates = JSON.parse(udf4);
-      if (!Array.isArray(delegates)) throw new Error("Not an array");
+      if (!Array.isArray(delegates)) delegates = [];
     } catch (e) {
-      console.error("❌ Failed to parse delegates:", e.message);
+      console.error("Delegates parse error:", e);
       delegates = [];
     }
-
-    // Save to DB
+    // Save payment record
     await Payment.create({
       txnid,
       amount: parseFloat(amount).toFixed(2),
@@ -1924,9 +1881,6 @@ app.post("/payu/success", async (req, res) => {
       payment_mode: "PayU",
       payment_date: new Date(),
     });
-
-    console.log("💾 Payment saved for txnid:", txnid);
-
     // Email first delegate
     if (delegates.length > 0) {
       const first = delegates[0];
@@ -1941,19 +1895,17 @@ app.post("/payu/success", async (req, res) => {
         designation: udf3,
         pax: udf5,
       };
-
       try {
         await emailjs.send(
           EMAILJS_SERVICE_ID,
           EMAILJS_TEMPLATE_ID,
           emailParams
         );
-        console.log("📧 Email sent to:", first.email);
+        console.log("Email sent to:", first.email);
       } catch (e) {
-        console.error("❌ Email sending failed:", e.message);
+        console.error("EmailJS failed:", e);
       }
     }
-
     return res.redirect(
       `https://miceandmore.co.in/payment-success?txnid=${encodeURIComponent(
         txnid
@@ -1962,17 +1914,10 @@ app.post("/payu/success", async (req, res) => {
       )}&pax=${encodeURIComponent(udf5)}`
     );
   } catch (e) {
-    console.error("❌ Exception in /payu/success:", e.message);
+    console.error("Error in /payu/success:", e);
     return res.redirect("https://miceandmore.co.in/payment-fail");
   }
 });
-
-// 🔎 Debug if PayU sends GET instead of POST
-app.get("/payu/success", (req, res) => {
-  console.warn("⚠️ PayU called /payu/success via GET, not POST");
-  return res.redirect("https://miceandmore.co.in/payment-fail");
-});
-
-// --- Start server ---
+// all good
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server listening on port ${PORT}`));
+app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
