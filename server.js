@@ -1622,28 +1622,30 @@
 //   console.log(`🚀 Server running at port ${PORT}`);
 // });
 
-require("dotenv").config();
-const express = require("express");
-const mongoose = require("mongoose");
-const bodyParser = require("body-parser");
-const crypto = require("crypto");
-const cors = require("cors");
-const emailjs = require("@emailjs/nodejs");
+// require("dotenv").config();
+// const express = require("express");
+// const mongoose = require("mongoose");
+// const bodyParser = require("body-parser");
+// const crypto = require("crypto");
+// const cors = require("cors");
+// const emailjs = require("@emailjs/nodejs");
 
-const app = express();
+// const app = express();
 
-app.use(bodyParser.json());
-app.use(
-  cors({
-    origin: [
-      "http://localhost:3000",
-      "https://www.miceandmore.co.in",
-      "https://miceandmore.co.in",
-    ],
-    methods: ["POST", "GET"],
-    credentials: true,
-  })
-);
+// app.use(bodyParser.json());
+// app.use(express.urlencoded({ extended: true }));
+
+// app.use(
+//   cors({
+//     origin: [
+//       "http://localhost:3000",
+//       "https://www.miceandmore.co.in",
+//       "https://miceandmore.co.in",
+//     ],
+//     methods: ["POST", "GET"],
+//     credentials: true,
+//   })
+// );
 
 // --- MongoDB connection ---
 const MONGO_URI = process.env.MONGO_URI;
