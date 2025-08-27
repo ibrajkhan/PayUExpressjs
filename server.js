@@ -2149,6 +2149,13 @@ app.post("/payu/success", async (req, res) => {
   }
 });
 
+// Failure Redirect
+
+app.post("/payu/fail", (req, res) => {
+  // console.log("❌ Payment failed:", req.body);
+  return res.redirect("https://miceandmore.co.in/payment-fail");
+});
+
 // all good
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
@@ -2171,7 +2178,7 @@ app.listen(PORT, () => console.log(`Listening on port ${PORT}`));
 // // app.use(bodyParser.json());
 
 // app.use(bodyParser.json());
-// // app.use(bodyParser.urlencoded({ extended: true })); // 👈 Add this line
+// app.use(bodyParser.urlencoded({ extended: true })); // 👈 Add this line
 
 // app.use(
 //   cors({
